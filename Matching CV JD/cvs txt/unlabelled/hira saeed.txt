@@ -1,0 +1,30 @@
+Hira Saeed
+Email: hira.saeed@outlook.com | Phone: 0315-9876543
+
+Objective:
+Seeking a Research Assistant role where I can contribute to data-driven research and publications in AI and Machine Learning.
+
+Education:
+- BS Software Engineering, NUST, Islamabad, 2021
+- FSc Pre-Engineering, Punjab College, Lahore, 2017
+
+Research Experience:
+- Research Assistant, NUST AI Research Lab (2022 – Present)
+  - Contributed to a funded project on Natural Language Processing for Urdu.
+  - Co-authored 2 research papers published in IEEE Xplore.
+  - Worked on data cleaning, annotation, and running ML experiments in Python.
+
+Projects:
+- Sentiment Analysis on Twitter Data using BERT
+- AI-based Resume Screening System (Final Year Project)
+
+Skills:
+- Research Writing, LaTeX, Academic Citation (APA, IEEE)
+- Machine Learning: Scikit-learn, TensorFlow, PyTorch
+- Tools: Jupyter Notebook, GitHub, Zotero
+
+Publications:
+- Saeed, H., & Khan, R. (2023). Urdu Sentiment Analysis using Transformer Models. *IEEE ICCCS*.
+
+References:
+Dr. Raza Khan – Assistant Professor, NUST

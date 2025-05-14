@@ -1,34 +1,32 @@
 import re
-import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
-from collections import defaultdict
-
-nltk.download("punkt")
-nltk.download("stopwords")
-nltk.download("wordnet")
+from nltk import pos_tag
+from collections import defaultdict, Counter
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 stop_words = set(stopwords.words("english"))
 lemmatizer = WordNetLemmatizer()
 
-# -------------------------------------------------
+
+# -------------------------------
 # Step 1: Clean and normalize text
-# -------------------------------------------------
+# -------------------------------
 def preprocess_text(text):
     text = re.sub(r'\s+', ' ', text)
     text = re.sub(r'\d+\s*Page[s]?\s*\d*', '', text)
     text = re.sub(r'[^\w\s]', '', text)
     text = text.lower().strip()
-    
+
     tokens = word_tokenize(text)
     tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words]
-    
     return " ".join(tokens)
 
-# -------------------------------------------------
+
+# -------------------------------
 # Step 2: Segment resume into sections
-# -------------------------------------------------
+# -------------------------------
 def segment_cv(text):
     section_patterns = {
         "education": r"(education|academic background)",
@@ -54,50 +52,52 @@ def segment_cv(text):
 
     return dict(sections)
 
-# -------------------------------------------------
-# Step 3: Extract keywords from segmented sections
-# -------------------------------------------------
-def extract_keywords_from_sections(segmented_cv):
-    tech_keywords = ["python", "java", "c#", "sql", "html", "css", "react", "node", "matlab"]
-    tools_keywords = ["visual studio", "jupyter", "git", "jira", "github"]
-    research_keywords = [
-        "machine learning", "deep learning", "ai", "data science", "nlp", 
-        "literature review", "data analysis", "research", "grant", 
-        "summarize", "supervise", "project", "report", "submission"
-    ]
-    teaching_keywords = [
-        "teaching", "curriculum", "lecture", "assessment", "academic", 
-        "course material", "personal tutor", "distance learning", "student support"
-    ]
-    role_keywords = ["instructor", "assistant", "associate", "researcher", "tutor"]
 
-    extracted = {"technologies": set(), "tools": set(), "research": set(), "roles": set(), "teaching": set()}
-    for section, content in segmented_cv.items():
-        text = content.lower()
-        for word in tech_keywords:
-            if word in text:
-                extracted["technologies"].add(word)
-        for tool in tools_keywords:
-            if tool in text:
-                extracted["tools"].add(tool)
-        for keyword in research_keywords:
-            if keyword in text:
-                extracted["research"].add(keyword)
-        for keyword in teaching_keywords:
-            if keyword in text:
-                extracted["teaching"].add(keyword)
-        for role in role_keywords:
-            if role in text:
-                extracted["roles"].add(role)
-    return {k: list(v) for k, v in extracted.items()}
+# -------------------------------
+# Step 3: Extract keywords from JD or CV
+# -------------------------------
+def extract_keywords(text, top_n=30):
+    text = preprocess_text(text)
+    tokens = word_tokenize(text)
+    tokens = [t for t in tokens if t not in stop_words and len(t) > 2]
 
-# -------------------------------------------------
-# Step 4: Constraint Extraction (degree, experience)
-# -------------------------------------------------
+    freq = Counter(tokens)
+    common = freq.most_common(top_n)
+    return [word for word, count in common]
+
+
+# -------------------------------
+# Step 4: Assign dynamic weights (TF-IDF style)
+# -------------------------------
+def assign_weights_from_jd(jd_text, top_n=30):
+    # Preprocess and extract keywords from JD text
+    cleaned = preprocess_text(jd_text)
+    tokens = word_tokenize(cleaned)
+    tokens = [t for t in tokens if t not in stop_words and len(t) > 2]
+
+    freq = Counter(tokens)
+    top_keywords = dict(freq.most_common(top_n))
+
+    # Normalize weights between 1 and 3
+    max_count = max(top_keywords.values(), default=1)
+    weighted_keywords = {kw: round(1 + 2 * (count / max_count), 2) for kw, count in top_keywords.items()}
+
+    return weighted_keywords
+
+
+# -------------------------------
+# Step 5: Constraint Extraction
+# -------------------------------
 def extract_constraints(text):
-    degrees = re.findall(r"(bachelors|bs|msc|ms|phd|bsc|m\.phil)", text.lower())
-    years = re.findall(r"(\d+)\+?\s+(?:years|yrs)", text.lower())
+    degree_patterns = [
+        r"bachelor(?:s)?(?: of [a-z\s]+)?", r"bs[c]?", r"m[\.]?\s?sc",
+        r"ph\.?d", r"m\.?phil", r"master(?:s)?(?: of [a-z\s]+)?"
+    ]
+    degrees = []
+    for pattern in degree_patterns:
+        degrees += re.findall(pattern, text.lower())
 
+    years = re.findall(r"(\d+)\+?\s+(?:years|yrs)", text.lower())
     max_years = max([int(y) for y in years], default=0)
 
     return {
@@ -105,64 +105,33 @@ def extract_constraints(text):
         "years_experience": max_years
     }
 
-# -------------------------------------------------
-# Step 5: Assign job-specific weights (optional scoring module)
-# -------------------------------------------------
-def assign_weights(extracted_keywords, job_title):
-    JD_KEYWORDS = {
-        "Lab Instructor": {
-            "instructor": 3, "teaching": 2.5, "curriculum": 2, "module": 1.5, "lecture": 2,
-            "tutor": 2, "assessment": 1.5, "academic": 2, "course material": 1.5,
-            "personal tutor": 2, "collaborate": 1, "research": 1, "feedback": 1.5,
-            "university": 1, "cs": 1.5, "student support": 2, "distance learning": 1,
-            "peer review": 1, "project proposal": 1
-        },
-        "Research Assistant": {
-            "research": 3, "literature review": 2.5, "data analysis": 2.5, "machine learning": 2,
-            "python": 2, "matlab": 1.5, "ai": 2, "nlp": 1.5, "grant": 1.5,
-            "submission": 1, "interview": 1.5, "summarize": 1, "report": 1.5,
-            "project": 2, "budget": 1, "pi": 1.2, "presentation": 1.5,
-            "supervise": 1.5, "progress report": 1, "analyze data": 2
-        }
-    }
 
-    job_weights = JD_KEYWORDS.get(job_title, {})
-    score = 0
-    for category in extracted_keywords:
-        for kw in extracted_keywords[category]:
-            score += job_weights.get(kw, 0)
-
-    return score
-
-# -------------------------------------------------
-# Final Entry Point: Process a single CV
-# -------------------------------------------------
+# -------------------------------
+# Final Entry Points
+# -------------------------------
 def process_cv(text):
     cleaned_text = preprocess_text(text)
     segmented = segment_cv(text)
-    extracted_keywords = extract_keywords_from_sections(segmented)
+    keywords = extract_keywords(text)
     constraints = extract_constraints(text)
     return {
-        "cleaned_text": cleaned_text,      # For TF-IDF
-        "segmented": segmented,            # For deep parsing if needed
-        "keywords": extracted_keywords,    # For role/label/ranking
-        "constraints": constraints         # For filtering in IR ranking
+        "cleaned_text": cleaned_text,
+        "segmented": segmented,
+        "keywords": keywords,
+        "constraints": constraints
     }
+
 
 def process_jd(text, job_title=None):
     cleaned_text = preprocess_text(text)
     segmented = segment_cv(text)
-    extracted_keywords = extract_keywords_from_sections(segmented)
+    keyword_weights = assign_weights_from_jd(text)
     constraints = extract_constraints(text)
-
-    # Use the title if provided to add roles
-    if job_title:
-        extracted_keywords["roles"].append(job_title.lower())
 
     return {
         "cleaned_text": cleaned_text,
         "segmented": segmented,
-        "keywords": extracted_keywords,
+        "keyword_weights": keyword_weights,
         "constraints": constraints,
         "job_title": job_title
     }

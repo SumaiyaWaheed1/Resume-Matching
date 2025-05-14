@@ -1,0 +1,30 @@
+Ali Raza
+Email: aliraza@gmail.com | Phone: 0300-1234567
+
+Objective:
+To obtain a Lab Instructor position in Computer Science where I can utilize my teaching and lab supervision skills to support undergraduate students.
+
+Education:
+- BS Computer Science, FAST-NUCES, Karachi, 2022
+- Intermediate (Pre-Engineering), DJ Science College, Karachi, 2018
+
+Experience:
+- Lab Instructor (Visiting), Department of CS, NED University (2023 – Present)
+  - Conducted weekly lab sessions for courses including Data Structures and Operating Systems.
+  - Assisted students in debugging code and understanding programming concepts.
+  - Maintained lab equipment and ensured timely submission of lab assignments.
+
+Projects:
+- Operating Systems Simulation in C++
+- Web-based Grading System using MERN Stack
+
+Skills:
+- Programming: C++, Python, Java
+- Lab Tools: Wireshark, GNS3, Git, Eclipse
+- Teaching: Lab supervision, report checking, one-on-one student help
+
+Certifications:
+- Instructional Skills Workshop (ISW), 2023
+
+References:
+Available on request.
