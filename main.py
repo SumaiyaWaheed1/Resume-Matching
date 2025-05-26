@@ -9,6 +9,8 @@ from nltk import download
 import time
 
 from preprocessing import process_cv, process_jd
+from multilabel_model import initialize_models, classify
+
 
 # ---------------------------------------------
 # Helper function to read uploaded files
@@ -27,7 +29,7 @@ label_data = {
     "Waqas Ahmed - CV for Lab Instructor.txt": 0,
     "Muhammad Omaid Sheikh - CV for for Lab Instructor.txt": 0,
     "Awais Anwar - CV for Lab Instructor.txt": 0,
-    "Urooj Sheikh - CV for Lab Engineer.txt": 0,
+    "Urooj Sheikh - CV for Lab Engineer.txt": 2,
     "Ghulam Jaffar - CV for Research Assistant.txt": 1,
     "Ebad Ali - CV for Research Assistant.txt": 1,
     "Sana Fatima - CV for Research Assistant.txt": 1,
@@ -37,6 +39,12 @@ label_data = {
     "Muhammad Azmi Umer - CV for Lab Instructor.txt": 0,
     "Shawana Khan - CV for Lab Instructor (1).txt": 0
 }
+INT_TO_ROLE = {
+    0: "Lab Instructor",
+    1: "Research Assistant",
+    2: "Lab Engineer",
+}
+
 
 # ---------------------------------------------
 # Streamlit UI
@@ -64,6 +72,13 @@ for filename, label in label_data.items():
 if labeled_resumes:
     with st.spinner('Processing and training the model...'):
         time.sleep(2)
+        labeled_role_lists = [[lbl] for lbl in labels]
+        
+        clf, vectorizer, mlb = initialize_models(
+            labeled_resumes,
+            labeled_role_lists
+        )
+
 
     # ---------------------------------------------
     # Process Job Descriptions
@@ -78,16 +93,18 @@ if labeled_resumes:
         # ---------------------------------------------
         # Train TF-IDF + Naive Bayes classifier
         # ---------------------------------------------
-        vectorizer = TfidfVectorizer()
-        X_labeled = vectorizer.fit_transform(labeled_resumes)
+        #vectorizer = TfidfVectorizer()
+        #X_labeled = vectorizer.fit_transform(labeled_resumes)
 
-        X_train, X_test, y_train, y_test = train_test_split(X_labeled, labels, test_size=0.2, random_state=48)
-        clf = MultinomialNB()
-        clf.fit(X_train, y_train)
+        #X_train, X_test, y_train, y_test = train_test_split(X_labeled, labels, test_size=0.2, random_state=48)
+        #train_texts = labeled_resumes
+        
+        #clf = MultinomialNB()
+        #clf.fit(X_train, y_train)
 
-        y_pred = clf.predict(X_test)
-        accuracy = accuracy_score(y_test, y_pred)
-        st.success(f"Model trained with accuracy: {accuracy * 100:.2f}%")
+        #y_pred = clf.predict(X_test)
+        #accuracy = accuracy_score(y_test, y_pred)
+        #st.success(f"Model trained with accuracy: {accuracy * 100:.2f}%")
 
         # ---------------------------------------------
         # Predict new (unlabeled) resumes
@@ -101,14 +118,12 @@ if labeled_resumes:
             if not unlabeled_files:
                 st.info("No new resumes to classify.")
             else:
-                unlabeled_resumes = [process_cv(read_file(file))["cleaned_text"] for file in unlabeled_files]
-                X_unlabeled = vectorizer.transform(unlabeled_resumes)
-                unlabeled_preds = clf.predict(X_unlabeled)
+                new_texts = [read_file(file) for file in unlabeled_files]
 
-                st.markdown("### Prediction Results")
-                for file, prediction in zip(unlabeled_files, unlabeled_preds):
-                    label = "Research Assistant" if prediction == 1 else "Lab Instructor"
-                    st.write(f"📄 **{file.name}** → 🏷️ *{label}*")
+                # Call minimal classify
+                results_df = classify(new_texts, clf, vectorizer, mlb)
+                st.markdown("### Predicted Roles")
+                st.dataframe(results_df)
 
     else:
         st.error("Please upload both job description files: 'JD Research Assistants.txt' and 'JD-Instructors.txt'.")
