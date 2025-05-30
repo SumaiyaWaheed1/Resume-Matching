@@ -11,6 +11,7 @@ from multilabel_module import initialize_models, classify       # Module B
 INT_TO_ROLE = {
     0: "Lab Instructor",
     1: "Research Assistant",
+    0: "Lab Engineer"
     
 }
 
