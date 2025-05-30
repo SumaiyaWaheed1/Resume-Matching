@@ -99,7 +99,7 @@ def ensemble_predict(cvs, jd, labeled_texts, labels, alpha=0.4, threshold=0.45):
       threshold     : cutoff on combined score for RA vs LI.
 
     Returns:
-      List of tuples (cv, ensemble_label).
+      List of tuples (cv, ensemble_score).
     """
     # Retrain NB with the tuned parameters and get CV accuracy (we ignore it here)
     vectorizer, clf, _ = train_naive_bayes(labeled_texts, labels)
@@ -120,10 +120,12 @@ def ensemble_predict(cvs, jd, labeled_texts, labels, alpha=0.4, threshold=0.45):
     for (cv, _), ir_norm, (p_li, p_ra) in zip(ranked_ir, normalized_ir, probs):
         ens_score = alpha * p_ra + (1 - alpha) * ir_norm
         label = 'Research Assistant' if ens_score > threshold else 'Lab Instructor'
-        cv['explanation'].update({
+        cv['explanation']={
             'ir_score':       round(ir_norm,    4),
             'nb_prob_ra':     round(p_ra,       4),
             'ensemble_score': round(ens_score,  4),
-        })
-        results.append((cv, label))
+        }
+        results.append((cv, ens_score))
+
+    results.sort(key=lambda x: x[1], reverse=True)
     return results

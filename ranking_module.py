@@ -69,11 +69,7 @@ def rank_and_filter(cvs, jd, use_constraints=False):
         # Hybrid Score: weighted avg of cosine + normalized kw score
         combined_score = 0.7 * cosine_scores[i] + 0.3 * (kw_score / 100)
 
-        cv["explanation"] = {
-            "cosine_similarity": round(float(cosine_scores[i]), 4),
-            "keyword_score": round(float(kw_score), 2),
-            "final_score": round(float(combined_score), 4)
-        }
+
 
         ranked_results.append((cv, combined_score))
 
