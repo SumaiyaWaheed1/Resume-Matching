@@ -1,21 +1,26 @@
 import streamlit as st
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
 import time
+import pandas as pd
+from preprocessing import process_cv, process_jd                # shared preprocessing
+from hybrid_module import train_naive_bayes, ensemble_predict  # Module C
+from multilabel_module import initialize_models, classify       # Module B
 
-from ranking_module import rank_and_filter  # 🆕 ADDED
-from preprocessing import process_cv, process_jd
+# Map integer labels → role names for multi-label
+INT_TO_ROLE = {
+    0: "Lab Instructor",
+    1: "Research Assistant",
+    0: "Lab Engineer"
+    
+}
 
 # ---------------------------------------------
-# Helper function to read uploaded files
+# Helper to read uploaded files
 # ---------------------------------------------
 def read_file(file):
     return file.read().decode('latin-1')
 
 # ---------------------------------------------
-# Labeled data
+# Labeled data (filename → integer label)
 # ---------------------------------------------
 label_data = {
     "Umair Ahmed - CV for Lab Instructor.txt": 0,
@@ -40,107 +45,105 @@ label_data = {
 # Streamlit UI
 # ---------------------------------------------
 st.title("Resume Classification & Ranking App")
-st.markdown("Upload resumes to classify and rank them for Research Assistant or Lab Instructor roles.")
-
+st.markdown("Upload resumes to train and then classify/rank new ones for three roles.")
 st.sidebar.title("Upload Resumes")
 uploaded_files = st.sidebar.file_uploader("Choose files", accept_multiple_files=True)
 
 # ---------------------------------------------
-# Process labeled resumes
+# 1) Gather labeled CVs
 # ---------------------------------------------
-labeled_resumes = []
-labels = []
+labeled_texts = []
+labels        = []
+for fname, lbl in label_data.items():
+    f = next((x for x in uploaded_files if x.name == fname), None)
+    if f:
+        text = read_file(f)
+        proc = process_cv(text)
+        labeled_texts.append(proc["cleaned_text"])
+        labels.append(lbl)
 
-for filename, label in label_data.items():
-    file = next((f for f in uploaded_files if f.name == filename), None)
-    if file is not None:
-        file_content = read_file(file)
-        cv_data = process_cv(file_content)
-        labeled_resumes.append(cv_data["cleaned_text"])  # 🔁 MODIFIED
-        labels.append(label)
+if not labeled_texts:
+    st.warning("Please upload *all* labeled CV files to train the models.")
+    st.stop()
 
-if labeled_resumes:
-    with st.spinner('Processing and training the model...'):
-        time.sleep(2)
+# ---------------------------------------------
+# 2) Train all three modules
+# ---------------------------------------------
+with st.spinner("Training Naive Bayes & Multi-Label models…"):
+    time.sleep(1)
+    # C: Naive Bayes for ensemble
+    vec_nb, clf_nb, acc_nb = train_naive_bayes(labeled_texts, labels)
+    # B: Multi-Label One-vs-Rest
+    role_lists = [[INT_TO_ROLE[l]] for l in labels]
+    clf_ml, vec_ml, mlb = initialize_models(labeled_texts, role_lists)
 
-    # ---------------------------------------------
-    # Job Descriptions
-    # ---------------------------------------------
-    jd_ra_file = next((f for f in uploaded_files if f.name == "JD Research Assistants.txt"), None)
-    jd_li_file = next((f for f in uploaded_files if f.name == "JD-Instructors.txt"), None)
+st.success(f"🔔 NB accuracy: {acc_nb*100:.2f}%; Multi-Label model ready")
 
-    if jd_ra_file and jd_li_file:
-        jd_ra_data = process_jd(read_file(jd_ra_file), job_title="Research Assistant")
-        jd_li_data = process_jd(read_file(jd_li_file), job_title="Lab Instructor")
+# ---------------------------------------------
+# 3) Load Job Descriptions
+# ---------------------------------------------
+jd_ra_f = next((x for x in uploaded_files if x.name == "JD Research Assistants.txt"), None)
+jd_li_f = next((x for x in uploaded_files if x.name == "JD-Instructors.txt"), None)
+if not jd_ra_f or not jd_li_f:
+    st.error("Please upload both 'JD Research Assistants.txt' and 'JD-Instructors.txt'.")
+    st.stop()
 
-        # ---------------------------------------------
-        # Train TF-IDF + Naive Bayes classifier
-        # ---------------------------------------------
-        vectorizer = TfidfVectorizer()
-        X_labeled = vectorizer.fit_transform(labeled_resumes)
-        X_train, X_test, y_train, y_test = train_test_split(X_labeled, labels, test_size=0.2, random_state=48)
+jd_ra = process_jd(read_file(jd_ra_f), job_title="Research Assistant")
+jd_li = process_jd(read_file(jd_li_f), job_title="Lab Instructor")
 
-        clf = MultinomialNB()
-        clf.fit(X_train, y_train)
+# ---------------------------------------------
+# 4) Classify & Rank New Resumes (Two Buttons)
+# ---------------------------------------------
 
-        y_pred = clf.predict(X_test)
-        accuracy = accuracy_score(y_test, y_pred)
-        st.success(f"Model trained with accuracy: {accuracy * 100:.2f}%")
+# Identify new CVs (not used for training and not JDs)
+new_files = [
+    x for x in uploaded_files
+    if x.name not in label_data
+    and x.name not in (jd_ra_f.name, jd_li_f.name)
+]
 
-        # ---------------------------------------------
-        # Predict and Rank New Resumes
-        # ---------------------------------------------
-        if st.sidebar.button("Classify New Resumes"):
-            unlabeled_files = [
-                f for f in uploaded_files
-                if f.name not in label_data and f.name not in ["JD Research Assistants.txt", "JD-Instructors.txt"]
-            ]
+if new_files:
+    # Preprocess all new resumes once
+    processed_new = []
+    for f in new_files:
+        d = process_cv(read_file(f))
+        d["filename"] = f.name
+        processed_new.append(d)
 
-            if not unlabeled_files:
-                st.info("No new resumes to classify.")
-            else:
-                processed_unlabeled = []
-                for file in unlabeled_files:
-                    cv_data = process_cv(read_file(file))
-                    cv_data["filename"] = file.name  # 🆕 Keep filename for display
-                    processed_unlabeled.append(cv_data)
+    st.markdown("## 🔎 Resume Analysis Options")
+    col1, col2 = st.columns(2)
 
-                # ---------------------------------------------
-                # Use ranking module
-                # ---------------------------------------------
-                st.markdown("### 🔍 Ranked Results (Cosine Similarity + Constraints + Keyword Weighting)")
+    with col1:
+        show_ranking = st.button("📊 Show Ranked Resumes")
+    with col2:
+        show_labels = st.button("🏷️ Show Predicted Labels")
 
-                def display_ranked_results(title, ranked_list):
-                    st.markdown(f"#### 📌 Top Candidates for {title}:")
-                    if ranked_list:
-                        for rank, (cv, score) in enumerate(ranked_list, start=1):
-                            st.markdown(f"""
-                            **{rank}. {cv['filename']}**
-                            - 🔢 Final Score: `{cv['explanation']['final_score']:.4f}`
-                            - 📊 Cosine Similarity: `{cv['explanation']['cosine_similarity']:.4f}`
-                            - 🧠 Keyword Score: `{cv['explanation']['keyword_score']}/100`
-                            """)
-                    else:
-                        st.warning(f"No matching CVs for {title} after filtering.")
+    if show_ranking:
+        st.markdown("### 🔍 IR-Based Ranked Results")
 
-                # Display ranked candidates for each job
-                display_ranked_results("Research Assistant", rank_and_filter(processed_unlabeled, jd_ra_data))
-                display_ranked_results("Lab Instructor", rank_and_filter(processed_unlabeled, jd_li_data))
+        def show_ir(title, ranked):
+            st.markdown(f"#### Top for {title}:")
+            if not ranked:
+                st.warning(f"No matches for {title}.")
+            for i, (cv, _) in enumerate(ranked, 1):
+                e = cv["explanation"]
+                st.markdown(
+                    f"**{i}. {cv['filename']}**  \n"
+                    f"- IR Score: `{e['ir_score']:.4f}`  \n"
+                    f"-  NB prob: `{e['nb_prob_ra']:.4f}`  \n"
+                    f"- Combined Score: `{e['ensemble_score']:.4f}`"
+                )
 
-                # ---------------------------------------------
-                # Optional: Classification-based prediction
-                # ---------------------------------------------
-                unlabeled_cleaned = [cv["cleaned_text"] for cv in processed_unlabeled]
-                X_unlabeled = vectorizer.transform(unlabeled_cleaned)
-                unlabeled_preds = clf.predict(X_unlabeled)
+        show_ir("Research Assistant", ensemble_predict(processed_new, jd_ra, labeled_texts, labels))
+        show_ir("Lab Instructor", ensemble_predict(processed_new, jd_li, labeled_texts, labels))
 
-                st.markdown("### 🧪 Naive Bayes Predictions")
-                for cv, prediction in zip(processed_unlabeled, unlabeled_preds):
-                    label = "Research Assistant" if prediction == 1 else "Lab Instructor"
-                    st.write(f"📄 **{cv['filename']}** → 🏷️ Predicted Label: **{label}**")
+    if show_labels:
+        st.markdown("### 🏷️ Multi-Label Predicted Roles")
+        texts_new = [cv["cleaned_text"] for cv in processed_new]
+        filenames_new = [cv["filename"] for cv in processed_new]
+        df_ml = classify(texts_new, clf_ml, vec_ml, mlb, filenames=filenames_new)
+        st.dataframe(df_ml.style.set_properties(**{'text-align': 'left'}))
 
-    else:
-        st.error("Please upload both job description files: 'JD Research Assistants.txt' and 'JD-Instructors.txt'.")
 
 else:
-    st.warning("Please upload labeled resumes to train the model.")
+    st.info("No new resumes to classify.")
