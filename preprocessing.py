@@ -7,9 +7,6 @@ from nltk.stem import WordNetLemmatizer
 from collections import defaultdict
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-# -------------------------------
-# 🔽 Download required NLTK resources
-# -------------------------------
 nltk.download("punkt")
 nltk.download("stopwords")
 nltk.download("wordnet")
@@ -17,9 +14,7 @@ nltk.download("wordnet")
 stop_words = set(stopwords.words("english"))
 lemmatizer = WordNetLemmatizer()
 
-# -------------------------------
-# Step 1: Clean and normalize text
-# -------------------------------
+# Clean and normalize text
 def preprocess_text(text):
     text = re.sub(r'\s+', ' ', text)
     text = re.sub(r'\d+\s*Page[s]?\s*\d*', '', text)
@@ -30,9 +25,7 @@ def preprocess_text(text):
     tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words and len(word) > 2]
     return " ".join(tokens)
 
-# -------------------------------
-# Step 2: Segment resume into sections
-# -------------------------------
+# Segment resume into sections
 def segment_cv(text):
     section_patterns = {
         "education": r"(education|academic background)",
@@ -58,9 +51,7 @@ def segment_cv(text):
 
     return dict(sections)
 
-# -------------------------------
-# Step 3: Extract keywords using TF-IDF
-# -------------------------------
+#  Extract keywords using TF-IDF
 def extract_keywords(text, top_n=30):
     cleaned_text = preprocess_text(text)
     vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
@@ -73,9 +64,7 @@ def extract_keywords(text, top_n=30):
 
     return top_keywords.tolist()
 
-# -------------------------------
-# Step 4: Assign TF-IDF weights from JD
-# -------------------------------
+# TF-IDF weights from JD
 def assign_weights_from_jd(jd_text, top_n=30):
     cleaned_text = preprocess_text(jd_text)
     vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
@@ -98,50 +87,60 @@ def assign_weights_from_jd(jd_text, top_n=30):
 
     return weighted_keywords
 
-# -------------------------------
-# Step 5: Extract skills as constraints from Skills section or whole text
-# -------------------------------
+#  Hardcoded constraint extraction from JD
+def extract_constraints_from_jd(jd_title):
+    constraints = {}
+
+    if jd_title == "Research Assistant":
+        constraints["skills"] = [
+            "literature review",  "data collection","data analysis","interviewing","record keeping","confidentiality handling",
+            "report writing","presentation preparation","academic writing","budget monitoring","research ethics","project coordination",
+            "supervising undergraduates","equipment procurement","email communication","website content management", "progress reporting",
+            "human subjects review","grant proposal preparation","experimental data handling"
+        ]
+    elif jd_title == "Lab Instructor":
+        constraints["skills"] = [
+            "lecture delivery", "tutorial conduction", "seminar facilitation", "undergraduate teaching", "postgraduate teaching", "distance learning","curriculum development",
+            "module development", "course material preparation", "student assessment", "research publication", "academic writing", "interdepartmental collaboration",
+            "course validation documentation", "marketing and outreach", "module leadership", "peer observation responsiveness","student feedback analysis",
+            "external examiner coordination","liaison with professional bodies", "networking with schools and colleges","committee participation", "technical collaboration", "oral communication",
+            "written communication", "learning material design", "high-quality teaching delivery","academic tutoring","team collaboration"
+        ]
+    return constraints
+
+#  Extract skills from CV text
 def extract_constraints(text):
-    # Try to find skills section first
     sections = segment_cv(text)
     skills_text = sections.get("skills", text)
-
-    # Preprocess skills text
     skills_text = preprocess_text(skills_text)
     tokens = skills_text.split()
-
-    # Simple heuristic: extract nouns and noun phrases as skills (optional: can be enhanced)
-    # For now, just return unique tokens as skills
     skills = list(set(tokens))
-
     return {
         "skills": skills
     }
 
-# -------------------------------
 # Entry points
-# -------------------------------
 def process_cv(text):
     cleaned_text = preprocess_text(text)
-    segmented = segment_cv(text)
     keywords = extract_keywords(text)
     constraints = extract_constraints(text)
     return {
         "cleaned_text": cleaned_text,
-        "segmented": segmented,
         "keywords": keywords,
         "constraints": constraints
     }
 
 def process_jd(text, job_title=None):
     cleaned_text = preprocess_text(text)
-    segmented = segment_cv(text)
     keyword_weights = assign_weights_from_jd(text)
-    constraints = extract_constraints(text)
+
+    if job_title in ["Research Assistant", "Lab Instructor"]:
+        constraints = extract_constraints_from_jd( job_title)
+    else:
+        constraints = extract_constraints(text)
     return {
         "cleaned_text": cleaned_text,
-        "segmented": segmented,
         "keyword_weights": keyword_weights,
         "constraints": constraints,
-        "job_title": job_title
+        "title": job_title
     }

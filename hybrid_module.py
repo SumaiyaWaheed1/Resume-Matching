@@ -1,7 +1,6 @@
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.utils import resample
@@ -26,12 +25,7 @@ def train_naive_bayes(labeled_texts, labels, test_size=0.2, random_state=48):
     ])
     # 1) Compute 5-fold cross-validation accuracy on the full labeled set
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
-    cv_scores = cross_val_score(pipeline,
-                                labeled_texts,
-                                labels,
-                                cv=cv,
-                                scoring='accuracy',
-                                n_jobs=-1)
+    cv_scores = cross_val_score(pipeline,labeled_texts,labels, cv=cv,scoring='accuracy',n_jobs=-1)
     cv_accuracy = cv_scores.mean()
 
     # 2) Now fit the vectorizer & classifier exactly as before (for downstream use)
@@ -69,10 +63,6 @@ def train_naive_bayes(labeled_texts, labels, test_size=0.2, random_state=48):
     # Re-fit NB on the oversampled training data
     clf.fit(X_train_bal, y_train_bal)
 
-    # (We still compute hold-out accuracy internally but do not return it)
-    # y_pred = clf.predict(X_test)
-    # holdout_accuracy = accuracy_score(y_test, y_pred)
-
     # 3) Return the trained vectorizer, classifier, and CV accuracy
     return vectorizer, clf, cv_accuracy
 
@@ -83,12 +73,10 @@ def predict_naive_bayes(vectorizer, clf, texts):
     """
     X = vectorizer.transform(texts)
     return clf.predict(X)
-
-
-def ensemble_predict(cvs, jd, labeled_texts, labels, alpha=0.4, threshold=0.45):
+def ensemble_predict(cvs, jd, labeled_texts, labels, alpha=0.4):
     """
     Combine IR ranking scores with NB probabilities into final label.
-    Uses the updated NB model above and the existing ranking logic.
+    Uses the original NB training logic and stores explanation per JD.
 
     Args:
       cvs           : list of processed CV dicts (must include 'cleaned_text').
@@ -101,7 +89,7 @@ def ensemble_predict(cvs, jd, labeled_texts, labels, alpha=0.4, threshold=0.45):
     Returns:
       List of tuples (cv, ensemble_score).
     """
-    # Retrain NB with the tuned parameters and get CV accuracy (we ignore it here)
+    # Train NB classifier and get vectorizer, clf
     vectorizer, clf, _ = train_naive_bayes(labeled_texts, labels)
 
     # Compute IR ranking
@@ -112,20 +100,37 @@ def ensemble_predict(cvs, jd, labeled_texts, labels, alpha=0.4, threshold=0.45):
     max_ir = max(ir_scores) if ir_scores else 1.0
     normalized_ir = [s / max_ir for s in ir_scores]
 
-    # NB probabilities on the same order
+    # Extract texts from ranked CVs
     texts = [cv['cleaned_text'] for cv, _ in ranked_ir]
+
+    # Get NB probabilities in same order
     probs = clf.predict_proba(vectorizer.transform(texts))
 
     results = []
     for (cv, _), ir_norm, (p_li, p_ra) in zip(ranked_ir, normalized_ir, probs):
-        ens_score = alpha * p_ra + (1 - alpha) * ir_norm
-        label = 'Research Assistant' if ens_score > threshold else 'Lab Instructor'
-        cv['explanation']={
+        # Decide which NB prob to use based on JD title
+        if jd['title'].lower() == 'research assistant':
+            nb_prob = p_ra
+        elif jd['title'].lower() == 'lab instructor':
+            nb_prob = p_li
+        else:
+            nb_prob = 0  # fallback if title doesn't match expected
+
+        # Combine scores
+        ens_score = alpha * nb_prob + (1 - alpha) * ir_norm
+
+        # Store explanations per JD title
+        if 'explanation_per_jd' not in cv:
+            cv['explanation_per_jd'] = {}
+
+        cv['explanation_per_jd'][jd['title']] = {
             'ir_score':       round(ir_norm,    4),
-            'nb_prob_ra':     round(p_ra,       4),
+            'nb_prob':        round(nb_prob,    4),
             'ensemble_score': round(ens_score,  4),
         }
+
         results.append((cv, ens_score))
 
+    # Sort descending by ensemble score
     results.sort(key=lambda x: x[1], reverse=True)
     return results
